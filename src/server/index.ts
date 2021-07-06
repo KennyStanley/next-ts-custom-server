@@ -1,5 +1,5 @@
 import { createServer, Server } from 'https'
-import { URL, parse, UrlWithParsedQuery } from 'url'
+import { parse } from 'url'
 import next from 'next'
 import fs from 'fs'
 import path from 'path'
@@ -12,6 +12,7 @@ const handle = app.getRequestHandler()
 // Global Variables
 let webServer: Server
 
+// Initialization
 (async () => {
     try {
         await runWebServer()
@@ -33,14 +34,12 @@ async function runWebServer() {
         key: fs.readFileSync(sslKey),
     };
 
-    await new Promise<void>((resolve) => {
-        app.prepare().then(() => resolve())
+    await app.prepare().then(() => {
+        webServer = createServer(tls, (req, res) => {
+            const parsedUrl = parse(req.url!, true);
+            handle(req, res, parsedUrl);
+        });
     })
-
-    webServer = createServer(tls, (req, res) => {
-        const parsedUrl = parse(req.url!, true);
-        handle(req, res, parsedUrl);
-    });
 
     webServer.on('error', (err: Error) => {
         console.error('starting web server failed:', err.message);
@@ -48,8 +47,7 @@ async function runWebServer() {
 
     await new Promise<void>((resolve) => {
         webServer.listen(port, () => {
-            console.log(`> Server listening at https://localhost:${port} as ${dev ? 'development' : process.env.NODE_ENV
-                }`);
+            console.log(`> Server listening at https://localhost:${port} as ${dev ? 'development' : process.env.NODE_ENV}`);
             resolve();
         });
     });
