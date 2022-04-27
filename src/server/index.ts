@@ -1,4 +1,5 @@
-import { createServer, Server } from 'https'
+import { createServer as createHttpsServer, Server as HttpsServer } from 'https'
+import { createServer, Server } from 'http'
 import { parse } from 'url'
 import next from 'next'
 import fs from 'fs'
@@ -10,10 +11,10 @@ const app = next({ dev })
 const handle = app.getRequestHandler()
 
 // Global Variables
-let webServer: Server
+let webServer: Server | HttpsServer
 
-// Initialization
-(async () => {
+    // Initialization
+;(async () => {
     try {
         await runWebServer()
     } catch (error) {
@@ -22,33 +23,48 @@ let webServer: Server
 })()
 
 async function runWebServer() {
-    const sslCrt = path.join(__dirname, "../../cert/cert.pem"),
-        sslKey = path.join(__dirname, "../../cert/key.pem")
+    const sslCrt = path.join(__dirname, '../../cert/cert.pem'),
+        sslKey = path.join(__dirname, '../../cert/key.pem')
 
-    if (!fs.existsSync(sslKey) || !fs.existsSync(sslCrt)) {
-        console.error('SSL files are not found. check the README.md for instructions.');
-        process.exit(0);
+    const sslCertExist = fs.existsSync(sslKey) && fs.existsSync(sslCrt)
+
+    if (sslCertExist) {
+        const tls = {
+            cert: fs.readFileSync(sslCrt),
+            key: fs.readFileSync(sslKey),
+        }
+
+        await app.prepare().then(() => {
+            webServer = createHttpsServer(tls, (req, res) => {
+                const parsedUrl = parse(req.url!, true)
+                handle(req, res, parsedUrl)
+            })
+        })
+    } else {
+        console.error('SSL files are not found. Using HTTP instead of HTTPS.')
+
+        await app.prepare().then(() => {
+            webServer = createServer((req, res) => {
+                const parsedUrl = parse(req.url!, true)
+                handle(req, res, parsedUrl)
+            })
+        })
     }
-    const tls = {
-        cert: fs.readFileSync(sslCrt),
-        key: fs.readFileSync(sslKey),
-    };
-
-    await app.prepare().then(() => {
-        webServer = createServer(tls, (req, res) => {
-            const parsedUrl = parse(req.url!, true);
-            handle(req, res, parsedUrl);
-        });
-    })
 
     webServer.on('error', (err: Error) => {
-        console.error('starting web server failed:', err.message);
-    });
+        console.error('starting web server failed:', err.message)
+    })
 
-    await new Promise<void>((resolve) => {
+    await new Promise<void>(resolve => {
         webServer.listen(port, () => {
-            console.log(`> Server listening at https://localhost:${port} as ${dev ? 'development' : process.env.NODE_ENV}`);
-            resolve();
-        });
-    });
+            console.log(
+                `> Server listening at http${
+                    sslCertExist ? 's' : ''
+                }://localhost:${port} as ${
+                    dev ? 'development' : process.env.NODE_ENV
+                }`
+            )
+            resolve()
+        })
+    })
 }
